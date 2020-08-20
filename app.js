@@ -1,7 +1,11 @@
 'use strict';
 
-const line = require('@line/bot-sdk');
-const express = require('express');
+const express = require('express')
+const middleware = require('@line/bot-sdk').middleware
+const JSONParseError = require('@line/bot-sdk').JSONParseError
+const SignatureValidationFailed = require('@line/bot-sdk').SignatureValidationFailed
+
+const app = express()
 
 // create LINE SDK config from env variables
 const config = {
@@ -11,41 +15,21 @@ const config = {
   channelSecret: 'ikcki1Ihb6ZlUIGdevxA+TDxsPH+CjB+OX8nBn9GDv4GUuPPkcaza5SkUKIfc3iOa2zx8cnvtWO6wBtxp1CTQO0e9FYN0xqh41PiOHUT4Bw8nUF46/F3Lx5aXGj5dN58l6sTOncCOkErZ0zXz/VTLAdB04t89/1O/w1cDnyilFU=',
 };
 
-// create LINE SDK client
-const client = new line.Client(config);
+app.use(middleware(config))
 
-// create Express app
-// about Express itself: https://expressjs.com/
-const app = express();
+app.post('/webhook', (req, res) => {
+  res.json(req.body.events) // req.body will be webhook event object
+})
 
-// register a webhook handler with middleware
-// about the middleware, please refer to doc
-app.post('/callback', line.middleware(config), (req, res) => {
-  Promise
-    .all(req.body.events.map(handleEvent))
-    .then((result) => res.json(result))
-    .catch((err) => {
-      console.error(err);
-      res.status(500).end();
-    });
-});
-
-// event handler
-function handleEvent(event) {
-  if (event.type !== 'message' || event.message.type !== 'text') {
-    // ignore non-text-message event
-    return Promise.resolve(null);
+app.use((err, req, res, next) => {
+  if (err instanceof SignatureValidationFailed) {
+    res.status(401).send(err.signature)
+    return
+  } else if (err instanceof JSONParseError) {
+    res.status(400).send(err.raw)
+    return
   }
+  next(err) // will throw default 500
+})
 
-  // create a echoing text message
-  const echo = { type: 'text', text: event.message.text };
-
-  // use reply API
-  return client.replyMessage(event.replyToken, echo);
-}
-
-// listen on port
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`listening on ${port}`);
-});
+app.listen(8080)
